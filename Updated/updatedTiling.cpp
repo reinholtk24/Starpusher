@@ -7,19 +7,32 @@ and may not be redistributed without written permission.*/
 #include <stdio.h>
 #include <string>
 #include <fstream>
+#include <iostream>
+#include <vector>
+
+
+using namespace std;
+
+enum KeyPressSurfaces
+{
+	KEY_PRESS_SURFACE_A,
+	KEY_PRESS_SURFACE_TOTAL
+};
+
+//The images that correspond to a keypress
 
 //Screen dimension constants
-const int SCREEN_WIDTH = 640;
-const int SCREEN_HEIGHT = 480;
+const int SCREEN_WIDTH = 675;
+const int SCREEN_HEIGHT = 616;
 
 //The dimensions of the level
-const int LEVEL_WIDTH = 1280;
-const int LEVEL_HEIGHT = 960;
+const int LEVEL_WIDTH = 675;
+const int LEVEL_HEIGHT = 616;
 
 //Tile constants
 const int TILE_WIDTH = 80;
 const int TILE_HEIGHT = 80;
-const int TOTAL_TILES = 192;
+const int TOTAL_TILES = 99;
 const int TOTAL_TILE_SPRITES = 12;
 
 //The different tile sprites
@@ -48,7 +61,7 @@ class LTexture
 
 		//Loads image at specified path
 		bool loadFromFile( std::string path );
-		
+
 		#ifdef _SDL_TTF_H
 		//Creates image from font string
 		bool loadFromRenderedText( std::string textureText, SDL_Color textColor );
@@ -65,7 +78,7 @@ class LTexture
 
 		//Set alpha modulation
 		void setAlpha( Uint8 alpha );
-		
+
 		//Renders texture at given point
 		void render( int x, int y, SDL_Rect* clip = NULL, double angle = 0.0, SDL_Point* center = NULL, SDL_RendererFlip flip = SDL_FLIP_NONE );
 
@@ -111,20 +124,20 @@ class Dot
 {
     public:
 		//The dimensions of the dot
-		static const int DOT_WIDTH = 20;
-		static const int DOT_HEIGHT = 20;
+		static const int DOT_WIDTH = 34;
+		static const int DOT_HEIGHT = 36;
 
 		//Maximum axis velocity of the dot
-		static const int DOT_VEL = 10;
+		//static const int DOT_VEL = 8;
 
 		//Initializes the variables
 		Dot();
 
 		//Takes key presses and adjusts the dot's velocity
-		void handleEvent( SDL_Event& e );
+		void handleEvent( SDL_Event& e , Tile *tileSet[]);
 
 		//Moves the dot and check collision against tiles
-		void move( Tile *tiles[] );
+		void move( Tile *tiles[], int direction );
 
 		//Centers the camera over the dot
 		void setCamera( SDL_Rect& camera );
@@ -169,6 +182,14 @@ LTexture gDotTexture;
 LTexture gTileTexture;
 SDL_Rect gTileClips[ TOTAL_TILE_SPRITES ];
 
+SDL_Surface* gKeyPressSurfaces[ KEY_PRESS_SURFACE_TOTAL ];
+
+SDL_Surface* gCurrentSurface = NULL;
+
+SDL_Surface* gScreenSurface = NULL;
+
+SDL_Surface* loadSurface( std::string path );
+
 LTexture::LTexture()
 {
 	//Initialize
@@ -200,7 +221,7 @@ bool LTexture::loadFromFile( std::string path )
 	else
 	{
 		//Color key image
-		SDL_SetColorKey( loadedSurface, SDL_TRUE, SDL_MapRGB( loadedSurface->format, 0, 0xFF, 0xFF ) );
+		SDL_SetColorKey( loadedSurface, SDL_TRUE, SDL_MapRGB( loadedSurface->format, 0, 255, 255 ) );
 
 		//Create texture from surface pixels
         newTexture = SDL_CreateTextureFromSurface( gRenderer, loadedSurface );
@@ -255,7 +276,7 @@ bool LTexture::loadFromRenderedText( std::string textureText, SDL_Color textColo
 		printf( "Unable to render text surface! SDL_ttf Error: %s\n", TTF_GetError() );
 	}
 
-	
+
 	//Return success
 	return mTexture != NULL;
 }
@@ -284,7 +305,7 @@ void LTexture::setBlendMode( SDL_BlendMode blending )
 	//Set blending function
 	SDL_SetTextureBlendMode( mTexture, blending );
 }
-		
+
 void LTexture::setAlpha( Uint8 alpha )
 {
 	//Modulate texture alpha
@@ -305,6 +326,18 @@ void LTexture::render( int x, int y, SDL_Rect* clip, double angle, SDL_Point* ce
 
 	//Render to screen
 	SDL_RenderCopyEx( gRenderer, mTexture, clip, &renderQuad, angle, center, flip );
+}
+
+SDL_Surface* loadSurface( std::string path )
+{
+	//Load image at specified path
+	SDL_Surface* loadedSurface = SDL_LoadBMP( path.c_str() );
+	if( loadedSurface == NULL )
+	{
+		printf( "Unable to load image %s! SDL Error: %s\n", path.c_str(), SDL_GetError() );
+	}
+
+	return loadedSurface;
 }
 
 int LTexture::getWidth()
@@ -354,17 +387,17 @@ SDL_Rect Tile::getBox()
 Dot::Dot()
 {
     //Initialize the collision box
-    mBox.x = 0;
-    mBox.y = 0;
+    mBox.x = 97;
+    mBox.y = 67;
 	mBox.w = DOT_WIDTH;
 	mBox.h = DOT_HEIGHT;
 
     //Initialize the velocity
-    mVelX = 0;
-    mVelY = 0;
+    mVelX = 75;
+    mVelY = 56;
 }
 
-void Dot::handleEvent( SDL_Event& e )
+void Dot::handleEvent( SDL_Event& e , Tile *tileSet[])
 {
     //If a key was pressed
 	if( e.type == SDL_KEYDOWN && e.key.repeat == 0 )
@@ -372,48 +405,70 @@ void Dot::handleEvent( SDL_Event& e )
         //Adjust the velocity
         switch( e.key.keysym.sym )
         {
-            case SDLK_UP: mVelY -= DOT_VEL; break;
-            case SDLK_DOWN: mVelY += DOT_VEL; break;
-            case SDLK_LEFT: mVelX -= DOT_VEL; break;
-            case SDLK_RIGHT: mVelX += DOT_VEL; break;
-        }
-    }
-    //If a key was released
-    else if( e.type == SDL_KEYUP && e.key.repeat == 0 )
-    {
-        //Adjust the velocity
-        switch( e.key.keysym.sym )
-        {
-            case SDLK_UP: mVelY += DOT_VEL; break;
-            case SDLK_DOWN: mVelY -= DOT_VEL; break;
-            case SDLK_LEFT: mVelX += DOT_VEL; break;
-            case SDLK_RIGHT: mVelX -= DOT_VEL; break;
+            case SDLK_UP: move(tileSet, 1); break;
+            case SDLK_DOWN: move(tileSet, 2); break;
+            case SDLK_LEFT: move(tileSet, 3); break;
+            case SDLK_RIGHT: move(tileSet, 4); break;
         }
     }
 }
 
-void Dot::move( Tile *tiles[] )
+void Dot::move( Tile *tiles[], int direction )
 {
-    //Move the dot left or right
-    mBox.x += mVelX;
-
-    //If the dot went too far to the left or right or touched a wall
-    if( ( mBox.x < 0 ) || ( mBox.x + DOT_WIDTH > LEVEL_WIDTH ) || touchesWall( mBox, tiles ) )
+    switch(direction)
     {
-        //move back
-        mBox.x -= mVelX;
+    case 1:
+
+            mBox.y -= mVelY;
+
+            //If the dot went too far up or down or touched a wall
+            if( ( mBox.y < 0 ) || ( mBox.y + DOT_HEIGHT > LEVEL_HEIGHT ) || touchesWall( mBox, tiles ) )
+            {
+                //move back
+                mBox.y += mVelY;
+            }
+        break;
+
+    case 2:
+        {
+            mBox.y += mVelY;
+
+            //If the dot went too far up or down or touched a wall
+            if( ( mBox.y < 0 ) || ( mBox.y + DOT_HEIGHT > LEVEL_HEIGHT ) || touchesWall( mBox, tiles ) )
+            {
+                //move back
+                mBox.y -= mVelY;
+            }
+        }break;
+
+    case 3:
+        {
+            mBox.x -= mVelX;
+
+            //If the dot went too far to the left or right or touched a wall
+            if( ( mBox.x < 0 ) || ( mBox.x + DOT_WIDTH > LEVEL_WIDTH ) || touchesWall( mBox, tiles ) )
+            {
+                //move back
+                mBox.x += mVelX;
+            }
+        }break;
+
+    case 4:
+        {
+            mBox.x += mVelX;
+
+            //If the dot went too far to the left or right or touched a wall
+            if( ( mBox.x < 0 ) || ( mBox.x + DOT_WIDTH > LEVEL_WIDTH ) || touchesWall( mBox, tiles ) )
+            {
+                //move back
+                mBox.x -= mVelX;
+            }
+        }break;
+
     }
 
-    //Move the dot up or down
-    mBox.y += mVelY;
-
-    //If the dot went too far up or down or touched a wall
-    if( ( mBox.y < 0 ) || ( mBox.y + DOT_HEIGHT > LEVEL_HEIGHT ) || touchesWall( mBox, tiles ) )
-    {
-        //move back
-        mBox.y -= mVelY;
-    }
 }
+
 
 void Dot::setCamera( SDL_Rect& camera )
 {
@@ -423,7 +478,7 @@ void Dot::setCamera( SDL_Rect& camera )
 
 	//Keep the camera in bounds
 	if( camera.x < 0 )
-	{ 
+	{
 		camera.x = 0;
 	}
 	if( camera.y < 0 )
@@ -505,6 +560,13 @@ bool loadMedia( Tile* tiles[] )
 	//Loading success flag
 	bool success = true;
 
+	gKeyPressSurfaces[ KEY_PRESS_SURFACE_A ] = loadSurface( "04_key_presses/press.bmp" );
+	if( gKeyPressSurfaces[ KEY_PRESS_SURFACE_A ] == NULL )
+	{
+		printf( "Failed to load default image!\n" );
+		success = false;
+	}
+
 	//Load dot texture
 	if( !gDotTexture.loadFromFile( "39_tiling/dot.bmp" ) )
 	{
@@ -545,7 +607,7 @@ void close( Tile* tiles[] )
 	gDotTexture.free();
 	gTileTexture.free();
 
-	//Destroy window	
+	//Destroy window
 	SDL_DestroyRenderer( gRenderer );
 	SDL_DestroyWindow( gWindow );
 	gWindow = NULL;
@@ -566,15 +628,15 @@ bool checkCollision( SDL_Rect a, SDL_Rect b )
 
     //Calculate the sides of rect A
     leftA = a.x;
-    rightA = a.x + a.w;
-    topA = a.y;
-    bottomA = a.y + a.h;
+    rightA = (a.x + a.w);
+    topA = a.y+24;
+    bottomA = (a.y + a.h)+24;
 
     //Calculate the sides of rect B
     leftB = b.x;
-    rightB = b.x + b.w;
-    topB = b.y;
-    bottomB = b.y + b.h;
+    rightB = (b.x + b.w);
+    topB = b.y+24;
+    bottomB = (b.y + b.h)-24;
 
     //If any of the sides from A are outside of B
     if( bottomA <= topB )
@@ -610,7 +672,7 @@ bool setTiles( Tile* tiles[] )
     int x = 0, y = 0;
 
     //Open the map
-    std::ifstream map( "39_tiling/lazy.map" );
+    std::ifstream map( "39_tiling/levelOne.map" );
 
     //If the map couldn't be loaded
     if( map == NULL )
@@ -654,6 +716,7 @@ bool setTiles( Tile* tiles[] )
 
 			//Move to next tile spot
 			x += TILE_WIDTH;
+			x = x - 5;
 
 			//If we've gone too far
 			if( x >= LEVEL_WIDTH )
@@ -663,9 +726,10 @@ bool setTiles( Tile* tiles[] )
 
 				//Move to the next row
 				y += TILE_HEIGHT;
+				y = y-24;
 			}
 		}
-		
+
 		//Clip the sprite sheet
 		if( tilesLoaded )
 		{
@@ -744,7 +808,7 @@ bool touchesWall( SDL_Rect box, Tile* tiles[] )
     for( int i = 0; i < TOTAL_TILES; ++i )
     {
         //If the tile is a wall type tile
-        if( ( tiles[ i ]->getType() >= TILE_CENTER ) && ( tiles[ i ]->getType() <= TILE_TOPLEFT ) )
+        if( ( tiles[ i ]->getType() >= TILE_CENTER ) && ( tiles[ i ]->getType() <= TILE_TOPLEFT ) || ( tiles[ i ]->getType() == TILE_RED ) || ( tiles[ i ]->getType() == TILE_BLUE ) )
         {
             //If the collision box touches the wall tile
             if( checkCollision( box, tiles[ i ]->getBox() ) )
@@ -767,6 +831,7 @@ int main( int argc, char* args[] )
 	}
 	else
 	{
+	    SDL_Event e;
 		//The level tiles
 		Tile* tileSet[ TOTAL_TILES ];
 
@@ -774,11 +839,14 @@ int main( int argc, char* args[] )
 		if( !loadMedia( tileSet ) )
 		{
 			printf( "Failed to load media!\n" );
+			cout << "failed to load media" << endl;
 		}
 		else
-		{	
+		{
 			//Main loop flag
 			bool quit = false;
+
+			int num = 0;
 
 			//Event handler
 			SDL_Event e;
@@ -788,6 +856,20 @@ int main( int argc, char* args[] )
 
 			//Level camera
 			SDL_Rect camera = { 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT };
+
+            /*!Jacob! I was trying to place this functionality into
+               while loops and other stuff. I couldn't seem to get
+                it right. I'm thinking that we might have to do something
+                with the gRenderer. I don't know. I need to look over
+                the documentation again. Thanks for looking at this for
+                us!
+			//gCurrentSurface = SDL_GetWindowSurface( gWindow );
+            /*
+			gCurrentSurface = gKeyPressSurfaces[ KEY_PRESS_SURFACE_A ];
+            SDL_BlitSurface( gCurrentSurface, NULL, gScreenSurface, NULL );
+
+            //Update the surface
+            SDL_UpdateWindowSurface( gWindow );*/
 
 			//While application is running
 			while( !quit )
@@ -802,11 +884,10 @@ int main( int argc, char* args[] )
 					}
 
 					//Handle input for the dot
-					dot.handleEvent( e );
+					dot.handleEvent( e, tileSet );
 				}
 
 				//Move the dot
-				dot.move( tileSet );
 				dot.setCamera( camera );
 
 				//Clear screen
@@ -820,13 +901,13 @@ int main( int argc, char* args[] )
 				}
 
 				//Render dot
-				dot.render( camera );
+				//dot.render( camera );
 
 				//Update screen
 				SDL_RenderPresent( gRenderer );
 			}
 		}
-		
+
 		//Free resources and close SDL
 		close( tileSet );
 	}
